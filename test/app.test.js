@@ -63,6 +63,11 @@ test('student can join today or tomorrow, once per phone, and leave', async () =
 
     const home = await (await fetch(`${s.base}/`, { headers: { cookie } })).text();
     assert.match(home, /Alex Smith/);
+    assert.match(home, /You&#39;re next!|You're next!/);
+
+    // name and house are remembered for next time
+    const again = await (await fetch(`${s.base}/join?t=${s.token()}`, { headers: { cookie: cookieFrom(res) } })).text();
+    assert.match(again, /value="Alex Smith"/);
 
     // someone else can't remove it
     await fetch(`${s.base}/leave/${entries[0].id}`, form({}));
@@ -96,6 +101,14 @@ test('admin can log in, change status, remove and rotate QR', async () => {
     assert.strictEqual(s.db().entries[0].status, 'done');
     await fetch(`${s.base}/admin/remove/${id}`, form({ cookie }));
     assert.strictEqual(s.db().entries.length, 0);
+
+    // "start next" finishes the current wash and starts the next person
+    await fetch(`${s.base}/join`, form({ t: s.token(), name: 'Ann', house: 'H', day: 'today' }));
+    await fetch(`${s.base}/join`, form({ t: s.token(), name: 'Ben', house: 'H', day: 'today' }));
+    const date = s.db().entries[0].date;
+    await fetch(`${s.base}/admin/next/${date}`, form({ cookie }));
+    await fetch(`${s.base}/admin/next/${date}`, form({ cookie }));
+    assert.deepStrictEqual(s.db().entries.map((e) => [e.name, e.status]), [['Ann', 'done'], ['Ben', 'washing']]);
 
     const old = s.token();
     await fetch(`${s.base}/admin/rotate-qr`, form({ cookie }));

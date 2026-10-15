@@ -60,18 +60,35 @@ function createApp({
 
   const joinUrl = (req) => `${publicUrl || `${req.protocol}://${req.get('host')}`}/join?t=${store.qrToken}`;
 
+  const joinContext = () => {
+    const { today, tomorrow } = days();
+    return {
+      token: store.qrToken, today, tomorrow,
+      todayWaiting: store.list(today).filter((e) => e.status === 'waiting').length,
+      tomorrowCount: store.list(tomorrow).filter((e) => e.status !== 'done').length,
+    };
+  };
+
   const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 40);
 
   // --- public ---------------------------------------------------------------
   app.get('/', (req, res) => {
     const { today, tomorrow } = days();
     store.prune(today);
-    const msgs = { joined: "You're on the list!", left: 'You have been removed from the list.' };
+    const msgs = { joined: "You're on the list!", left: 'You have been taken off the list.' };
+    const device = deviceId(req, res);
+    const todayList = store.list(today);
+    const tomorrowList = store.list(tomorrow);
+    const mySpots = [['today', todayList], ['tomorrow', tomorrowList]].flatMap(([when, list]) => {
+      const active = list.filter((e) => e.status !== 'done');
+      const entry = active.find((e) => e.deviceId === device);
+      if (!entry) return [];
+      const ahead = active.filter((e) => e.status === 'waiting' && e.createdAt < entry.createdAt).length;
+      return [{ entry, ahead, when }];
+    });
     res.send(views.homePage({
-      today, tomorrow,
-      todayList: store.list(today),
-      tomorrowList: store.list(tomorrow),
-      deviceId: deviceId(req, res),
+      today, tomorrow, todayList, tomorrowList, mySpots,
+      deviceId: device,
       msg: msgs[req.query.m],
       highlight: req.query.id,
     }));
@@ -80,7 +97,8 @@ function createApp({
   app.get('/join', (req, res) => {
     if (!safeEqual(req.query.t || '', store.qrToken)) return res.status(403).send(views.scanRequiredPage());
     deviceId(req, res);
-    res.send(views.joinPage({ token: store.qrToken, ...days() }));
+    const c = cookies(req);
+    res.send(views.joinPage({ ...joinContext(), values: { name: c.lq_name, house: c.lq_house } }));
   });
 
   app.post('/join', (req, res) => {
@@ -88,7 +106,7 @@ function createApp({
     const { today, tomorrow } = days();
     const values = { name: clean(req.body.name), house: clean(req.body.house), day: req.body.day };
     const date = values.day === 'tomorrow' ? tomorrow : values.day === 'today' ? today : null;
-    const fail = (error) => res.status(400).send(views.joinPage({ token: store.qrToken, today, tomorrow, values, error }));
+    const fail = (error) => res.status(400).send(views.joinPage({ ...joinContext(), values, error }));
 
     if (!values.name || !values.house) return fail('Please fill in your name and house.');
     if (!date) return fail('Please choose today or tomorrow.');
@@ -101,6 +119,9 @@ function createApp({
     }
 
     const entry = store.add(date, { name: values.name, house: values.house, deviceId: device });
+    // Remember name/house so next time is a single tap.
+    setCookie(res, req, 'lq_name', values.name, 60 * 60 * 24 * 365);
+    setCookie(res, req, 'lq_house', values.house, 60 * 60 * 24 * 365);
     res.redirect(`/?m=joined&id=${entry.id}`);
   });
 
@@ -130,12 +151,15 @@ function createApp({
   app.get('/admin', requireAdmin, async (req, res, next) => {
     try {
       const { today, tomorrow } = days();
+      const day = req.query.day === 'tomorrow' ? 'tomorrow' : 'today';
+      const date = day === 'tomorrow' ? tomorrow : today;
       const url = joinUrl(req);
       const msgs = { rotated: 'New QR code generated — print a new poster.', cleared: 'List cleared.' };
+      const active = (d) => store.list(d).filter((e) => e.status !== 'done').length;
       res.send(views.adminPage({
-        today, tomorrow,
-        todayList: store.list(today),
-        tomorrowList: store.list(tomorrow),
+        day, date, today, tomorrow,
+        list: store.list(date),
+        counts: { today: active(today), tomorrow: active(tomorrow) },
         qrSvg: await QRCode.toString(url, { type: 'svg', margin: 1, color: { dark: '#0c2c65' } }),
         joinUrl: url,
         msg: msgs[req.query.m],
@@ -150,9 +174,12 @@ function createApp({
     } catch (err) { next(err); }
   });
 
+  const back = (req, res, m) =>
+    res.redirect(`/admin?day=${req.body.day === 'tomorrow' ? 'tomorrow' : 'today'}${m ? `&m=${m}` : ''}`);
+
   const statusAction = (status) => (req, res) => {
     store.setStatus(req.params.id, status);
-    res.redirect('/admin');
+    back(req, res);
   };
   app.post('/admin/start/:id', requireAdmin, statusAction('washing'));
   app.post('/admin/done/:id', requireAdmin, statusAction('done'));
@@ -160,12 +187,21 @@ function createApp({
 
   app.post('/admin/remove/:id', requireAdmin, (req, res) => {
     store.remove(req.params.id);
-    res.redirect('/admin');
+    back(req, res);
+  });
+
+  // One tap: finish whatever is washing and start the next person waiting.
+  app.post('/admin/next/:date', requireAdmin, (req, res) => {
+    const list = store.list(req.params.date);
+    list.filter((e) => e.status === 'washing').forEach((e) => store.setStatus(e.id, 'done'));
+    const next = list.find((e) => e.status === 'waiting');
+    if (next) store.setStatus(next.id, 'washing');
+    back(req, res);
   });
 
   app.post('/admin/clear/:date', requireAdmin, (req, res) => {
     if (/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) store.clear(req.params.date);
-    res.redirect('/admin?m=cleared');
+    back(req, res, 'cleared');
   });
 
   app.post('/admin/rotate-qr', requireAdmin, (req, res) => {

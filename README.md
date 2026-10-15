@@ -2,9 +2,10 @@
 
 A simple website for Scarborough College boarders to queue for the laundry. It uses the school's navy and gold colours and the Montserrat font.
 
-- **Queue page (`/`)**: shows today's queue and tomorrow's sign-up list. It refreshes every minute.
-- **Sign up by QR code only**: students scan the poster in the laundry room. The code opens `/join`, where they enter their name and house/room and choose **today** or **tomorrow**. Each phone can be on a day's list once. A student can take their own name off while they are still waiting.
+- **Queue page (`/`)**: shows who is washing now, who is next, and today's and tomorrow's lists. A student who has signed up sees their own place in line ("You're 2nd in line, 1 person ahead of you"). The page refreshes every minute.
+- **Sign up by QR code only**: students scan the poster in the laundry room. The code opens `/join`, where they enter their name and house/room and tap **Today** or **Tomorrow**. Their name and house are remembered, so next time it's a single tap. Each phone can be on a day's list once. A student can take their own name off while they are still waiting.
 - **Staff admin (`/admin`)**, password protected:
+  - **Start next** is a one-tap button: it finishes the current wash and starts the next person.
   - **Start** sets an entry to "In the machine", **Done** marks it finished, **Remove** deletes it, and **Clear whole list** empties a day.
   - **Print poster** gives a printable QR code. **Generate new code** stops old posters and photos of them from working.
 - At midnight UK time, "tomorrow" becomes "today" by itself. Entries older than 14 days are deleted.
