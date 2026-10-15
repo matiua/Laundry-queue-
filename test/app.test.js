@@ -69,7 +69,7 @@ test('student can join today or tomorrow, once per phone, and leave', async () =
 
     const home = await (await fetch(`${s.base}/`, { headers: { cookie } })).text();
     assert.match(home, /Alex Smith/);
-    assert.match(home, /You&#39;re next!|You're next!/);
+    assert.match(home, /It&#39;s your turn!|It's your turn!/, 'machine was free, so the first person is called straight away');
 
     // name and house are remembered for next time
     const again = await (await fetch(`${s.base}/join?t=${s.token()}`, { headers: { cookie: cookieFrom(res) } })).text();
@@ -148,14 +148,18 @@ const statuses = (s) => s.db().entries.map((e) => `${e.name}:${e.status}`);
 test('calling next sends a push; no-shows go to the back, then off the list', async () => {
   const s = await setup();
   try {
+    // Zed is already washing, so Ann and Ben queue up.
+    await joinAs(s, 'Zed');
+    const admin = await adminCookie(s);
+    const zedId = s.db().entries[0].id;
+    await fetch(`${s.base}/admin/start/${zedId}`, form({ cookie: admin }));
     const annCookie = await joinAs(s, 'Ann');
     await joinAs(s, 'Ben');
-    const admin = await adminCookie(s);
-    const date = s.db().entries[0].date;
+    const st = () => statuses(s).filter((x) => !x.startsWith('Zed'));
 
-    await fetch(`${s.base}/admin/next/${date}`, form({ cookie: admin }));
+    await fetch(`${s.base}/admin/done/${zedId}`, form({ cookie: admin }));
     await tick();
-    assert.deepStrictEqual(statuses(s), ['Ann:called', 'Ben:waiting']);
+    assert.deepStrictEqual(st(), ['Ann:called', 'Ben:waiting']);
     assert.strictEqual(s.pushes.at(-1).endpoint, 'https://push.example/Ann');
     assert.match(s.pushes.at(-1).title, /your turn/);
 
@@ -164,7 +168,7 @@ test('calling next sends a push; no-shows go to the back, then off the list', as
     assert.match(home, /data-deadline/);
 
     // staff: not here → Ann to the back, Ben called
-    await fetch(`${s.base}/admin/skip/${s.db().entries[0].id}`, form({ cookie: admin }));
+    await fetch(`${s.base}/admin/skip/${s.db().entries.find((e) => e.name === 'Ann').id}`, form({ cookie: admin }));
     await tick();
     const ann = s.db().entries.find((e) => e.name === 'Ann');
     assert.strictEqual(ann.status, 'waiting');
@@ -184,7 +188,7 @@ test('calling next sends a push; no-shows go to the back, then off the list', as
     s.clock.t += 61000;
     await fetch(`${s.base}/api/version`);
     await tick();
-    assert.deepStrictEqual(statuses(s), ['Ben:done']);
+    assert.deepStrictEqual(st(), ['Ben:done']);
     assert.ok(s.pushes.some((p) => p.endpoint.endsWith('Ann') && /Removed/.test(p.title)));
   } finally { s.close(); }
 });
@@ -330,5 +334,32 @@ test('a student can say they are done, which frees the machine for the next pers
     const sent = s.pushes.slice(before);
     assert.ok(sent.some((p) => p.endpoint.endsWith('Ben') && /your turn/.test(p.title)), 'Ben is told it is his turn');
     assert.ok(!sent.some((p) => p.endpoint.endsWith('Ann')), 'Ann is not told to collect laundry she already took');
+  } finally { s.close(); }
+});
+
+test('a called student can start their own wash', async () => {
+  const s = await setup();
+  try {
+    const annCookie = await joinAs(s, 'Ann');
+    const benCookie = await joinAs(s, 'Ben');
+    const admin = await adminCookie(s);
+    await fetch(`${s.base}/admin/next/${s.db().entries[0].date}`, form({ cookie: admin }));
+    const annId = s.db().entries[0].id;
+
+    const page = await (await fetch(`${s.base}/`, { headers: { cookie: annCookie } })).text();
+    assert.match(page, /I&#39;m here|I'm here/);
+
+    // only Ann's phone can start Ann's wash, and only once she's called
+    await fetch(`${s.base}/arrive/${annId}`, form({ cookie: benCookie }));
+    await fetch(`${s.base}/arrive/${s.db().entries[1].id}`, form({ cookie: benCookie }));
+    assert.deepStrictEqual(statuses(s), ['Ann:called', 'Ben:waiting']);
+
+    const res = await fetch(`${s.base}/arrive/${annId}`, form({ cookie: annCookie }));
+    assert.strictEqual(res.headers.get('location'), '/?m=started');
+    assert.deepStrictEqual(statuses(s), ['Ann:washing', 'Ben:waiting']);
+
+    // ...and the whole turn can run without staff
+    await fetch(`${s.base}/finish/${annId}`, form({ cookie: annCookie }));
+    assert.deepStrictEqual(statuses(s), ['Ann:done', 'Ben:called']);
   } finally { s.close(); }
 });

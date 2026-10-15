@@ -27,7 +27,7 @@
 | 📍 **Your place in line** | "You're 3rd in line, 2 people ahead of you." Your row is highlighted, and the page updates itself. |
 | ⏳ **Wait-time estimates** | "Estimated turn: about 1 h 30 min (around 12:49)", plus "45 min left" on the current wash. |
 | 🔔 **Phone notifications** | "🧺 It's your turn!" when staff call you, and "✅ Your wash is done" when it's finished. |
-| ✅ **"I'm done" button** | When their wash is finished and the laundry is out, students tap **I'm done — machine is free**. The next person is called and notified straight away. |
+| 🙋 **Students run it themselves** | Called students tap **I'm here — start my wash**. When their laundry is out, they tap **I'm done — machine is free**, and the next person is called and notified straight away. Staff only step in when needed. |
 | ⏱️ **No-show handling** | Called students have 10 minutes to arrive. If they don't, they move to the back and the next person is called. A second miss takes them off the list. |
 | 👆 **One-tap for staff** | **Call next** → **Arrived — start wash** → **Done**. Tapping **Done** calls the next person automatically. |
 | 📺 **Laundry room screen** | A full-screen page for a TV or tablet: who's washing, who's called, who's next, a clock and the QR code to join. |
@@ -49,7 +49,7 @@
   <tr>
     <td align="center"><strong>1. Scan &amp; join</strong><br><sub>Type your name and house once, then tap <em>Today</em> or <em>Tomorrow</em>. Your details are remembered next time.</sub></td>
     <td align="center"><strong>2. Wait your turn</strong><br><sub>See who's washing, who's next and your place in line. Tap <em>Notify me</em> to get a ping.</sub></td>
-    <td align="center"><strong>3. It's your turn!</strong><br><sub>Your phone gets a notification and the page shows a countdown. Can't make it? Tap to hand the turn on.</sub></td>
+    <td align="center"><strong>3. It's your turn!</strong><br><sub>Your phone gets a notification and the page shows a countdown. Tap <em>I'm here</em> at the machine, then <em>I'm done</em> when your laundry is out.</sub></td>
   </tr>
 </table>
 
@@ -65,7 +65,9 @@
 1. Log in at **`/admin`** with the staff password.
 2. Tap **Call next**. The student is notified and has 10 minutes to turn up.
 3. When they arrive, tap **Arrived — start wash**. If they don't arrive, tap **Not here — skip** (or let the timer do it).
-4. When the wash finishes, tap **Done**. The student is told to collect their laundry, and the next person is called automatically. Students can also do this themselves with **I'm done — machine is free** on their phone.
+4. When the wash finishes, tap **Done**. The student is told to collect their laundry, and the next person is called automatically.
+
+Students can do steps 3 and 4 themselves with **I'm here — start my wash** and **I'm done — machine is free** on their phone. When the machine is free and nobody is waiting, a student who scans the code is called straight away. In practice the queue runs by itself, and the staff page is for fixing things: skipping, removing or calling someone.
 
 Today and tomorrow are on separate tabs. Students who have missed a turn are marked (e.g. *missed 1×*).
 
@@ -152,7 +154,7 @@ If notifications are off or blocked, the queue still works: the page updates by 
 ## 🛠️ How it works
 
 ```
-waiting ──Call next──▶ called ──Arrived──▶ washing ──Done / "I'm done"──▶ done
+waiting ──Call next──▶ called ──Arrived / "I'm here"──▶ washing ──Done / "I'm done"──▶ done
    ▲                     │                                  │
    │                     └─ no-show (10 min or "Not here")  └─ next person is
    └──── back of the queue ◀─┘  (2nd miss: removed)            called automatically

@@ -124,6 +124,7 @@ function createApp({
       joined: "You're on the list!",
       left: 'You have been taken off the list.',
       finished: 'Thanks! The next person has been told the machine is free.',
+      started: "Your wash has started. Tap \"I'm done\" when you've taken your laundry out.",
     };
     const device = deviceId(req, res);
     const todayList = store.list(today);
@@ -170,6 +171,8 @@ function createApp({
     }
 
     const entry = store.add(date, { name: values.name, house: values.house, deviceId: device }, nowMs());
+    // Machine free and nobody ahead? They're in the laundry room (they scanned the code), so it's their turn now.
+    if (date === today) turns.callNext(today, nowMs());
     // Remember name/house so next time is a single tap.
     setCookie(res, req, 'lq_name', values.name, 60 * 60 * 24 * 365);
     setCookie(res, req, 'lq_house', values.house, 60 * 60 * 24 * 365);
@@ -183,6 +186,14 @@ function createApp({
       if (entry.status === 'called') turns.callNext(entry.date, nowMs(), { except: entry.id });
     }
     res.redirect('/?m=left');
+  });
+
+  // A called student is at the machine and starts their own wash.
+  app.post('/arrive/:id', (req, res) => {
+    const entry = store.get(req.params.id);
+    if (!entry || entry.status !== 'called' || entry.deviceId !== cookies(req).lq_device) return res.redirect('/');
+    turns.start(entry.id, nowMs());
+    res.redirect('/?m=started');
   });
 
   // A student says their wash is finished and the machine is free.

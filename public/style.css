@@ -435,6 +435,7 @@ main.wrap { padding-top: 24px; padding-bottom: 48px; }
   .form input:focus, .settings input:focus { border-color: #5b86d6; }
   .btn-outline:hover, .btn-light:hover { background: var(--primary); border-color: var(--primary); }
   .my-spot .btn-light { background: var(--navy-deep); color: #fff; border-color: var(--navy-deep); }
+  .my-spot-called { color: var(--text); }
   .my-spot-called .btn-light { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
   .my-spot-called .countdown { color: var(--ink); }
   .called-name { color: var(--ink); }
@@ -451,3 +452,7 @@ main.wrap { padding-top: 24px; padding-bottom: 48px; }
 }
 
 .finish-form { width: 100%; margin: 0; }
+.btn-arrive { background: var(--red); border-color: var(--red); }
+.btn-arrive:hover { background: #d63a46; border-color: #d63a46; }
+.my-spot-called .finish-form { order: 2; }
+.my-spot-called form:not(.finish-form) { order: 3; }
