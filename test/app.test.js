@@ -69,7 +69,7 @@ test('student can join today or tomorrow, once per phone, and leave', async () =
 
     const home = await (await fetch(`${s.base}/`, { headers: { cookie } })).text();
     assert.match(home, /Alex Smith/);
-    assert.match(home, /You&#39;re next!|You're next!/);
+    assert.match(home, /It&#39;s your turn!|It's your turn!/, 'machine was free, so the first person is called straight away');
 
     // name and house are remembered for next time
     const again = await (await fetch(`${s.base}/join?t=${s.token()}`, { headers: { cookie: cookieFrom(res) } })).text();
@@ -108,7 +108,7 @@ test('admin can log in, change status, remove and rotate QR', async () => {
     await fetch(`${s.base}/admin/remove/${id}`, form({ cookie }));
     assert.strictEqual(s.db().entries.length, 0);
 
-    // "call next" calls; "arrived" starts; next tap finishes and calls the following person
+    // "call next" calls; "arrived" starts; "done" finishes and auto-calls the following person
     await fetch(`${s.base}/join`, form({ t: s.token(), name: 'Ann', house: 'H', day: 'today' }));
     await fetch(`${s.base}/join`, form({ t: s.token(), name: 'Ben', house: 'H', day: 'today' }));
     const date = s.db().entries[0].date;
@@ -116,6 +116,8 @@ test('admin can log in, change status, remove and rotate QR', async () => {
     assert.deepStrictEqual(s.db().entries.map((e) => e.status), ['called', 'waiting']);
     await fetch(`${s.base}/admin/start/${s.db().entries[0].id}`, form({ cookie }));
     await fetch(`${s.base}/admin/next/${date}`, form({ cookie }));
+    assert.deepStrictEqual(s.db().entries.map((e) => e.status), ['washing', 'waiting'], 'no free machine, nobody called');
+    await fetch(`${s.base}/admin/done/${s.db().entries[0].id}`, form({ cookie }));
     assert.deepStrictEqual(s.db().entries.map((e) => [e.name, e.status]), [['Ann', 'done'], ['Ben', 'called']]);
 
     const old = s.token();
@@ -146,14 +148,18 @@ const statuses = (s) => s.db().entries.map((e) => `${e.name}:${e.status}`);
 test('calling next sends a push; no-shows go to the back, then off the list', async () => {
   const s = await setup();
   try {
+    // Zed is already washing, so Ann and Ben queue up.
+    await joinAs(s, 'Zed');
+    const admin = await adminCookie(s);
+    const zedId = s.db().entries[0].id;
+    await fetch(`${s.base}/admin/start/${zedId}`, form({ cookie: admin }));
     const annCookie = await joinAs(s, 'Ann');
     await joinAs(s, 'Ben');
-    const admin = await adminCookie(s);
-    const date = s.db().entries[0].date;
+    const st = () => statuses(s).filter((x) => !x.startsWith('Zed'));
 
-    await fetch(`${s.base}/admin/next/${date}`, form({ cookie: admin }));
+    await fetch(`${s.base}/admin/done/${zedId}`, form({ cookie: admin }));
     await tick();
-    assert.deepStrictEqual(statuses(s), ['Ann:called', 'Ben:waiting']);
+    assert.deepStrictEqual(st(), ['Ann:called', 'Ben:waiting']);
     assert.strictEqual(s.pushes.at(-1).endpoint, 'https://push.example/Ann');
     assert.match(s.pushes.at(-1).title, /your turn/);
 
@@ -162,7 +168,7 @@ test('calling next sends a push; no-shows go to the back, then off the list', as
     assert.match(home, /data-deadline/);
 
     // staff: not here → Ann to the back, Ben called
-    await fetch(`${s.base}/admin/skip/${s.db().entries[0].id}`, form({ cookie: admin }));
+    await fetch(`${s.base}/admin/skip/${s.db().entries.find((e) => e.name === 'Ann').id}`, form({ cookie: admin }));
     await tick();
     const ann = s.db().entries.find((e) => e.name === 'Ann');
     assert.strictEqual(ann.status, 'waiting');
@@ -171,9 +177,10 @@ test('calling next sends a push; no-shows go to the back, then off the list', as
     assert.ok(s.pushes.some((p) => p.endpoint.endsWith('Ann') && /missed/.test(p.title)));
     assert.ok(s.pushes.some((p) => p.endpoint.endsWith('Ben') && /your turn/.test(p.title)));
 
-    // Ben arrives; then Ann is called again and times out → removed (second miss)
-    await fetch(`${s.base}/admin/start/${s.db().entries.find((e) => e.name === 'Ben').id}`, form({ cookie: admin }));
-    await fetch(`${s.base}/admin/next/${date}`, form({ cookie: admin }));
+    // Ben arrives and finishes; Ann is called again automatically and times out → removed (second miss)
+    const benId = s.db().entries.find((e) => e.name === 'Ben').id;
+    await fetch(`${s.base}/admin/start/${benId}`, form({ cookie: admin }));
+    await fetch(`${s.base}/admin/done/${benId}`, form({ cookie: admin }));
     assert.strictEqual(s.db().entries.find((e) => e.name === 'Ann').status, 'called');
     s.clock.t += 9 * 60000;
     await fetch(`${s.base}/api/version`);
@@ -181,7 +188,7 @@ test('calling next sends a push; no-shows go to the back, then off the list', as
     s.clock.t += 61000;
     await fetch(`${s.base}/api/version`);
     await tick();
-    assert.deepStrictEqual(statuses(s), ['Ben:done']);
+    assert.deepStrictEqual(st(), ['Ben:done']);
     assert.ok(s.pushes.some((p) => p.endpoint.endsWith('Ann') && /Removed/.test(p.title)));
   } finally { s.close(); }
 });
@@ -222,5 +229,137 @@ test('subscribe rejects bad input', async () => {
     assert.strictEqual((await post({ subscription: { endpoint: 'http://x', keys: { p256dh: 'a', auth: 'b' } } })).status, 400);
     assert.strictEqual((await post({ subscription: { endpoint: 'https://x', keys: { p256dh: 'a', auth: 'b' } } }, '')).status, 400);
     assert.strictEqual((await post({ subscription: { endpoint: 'https://x', keys: { p256dh: 'a', auth: 'b' } } })).status, 200);
+  } finally { s.close(); }
+});
+
+const { estimate } = require('../lib/turns');
+
+async function saveSettings(s, cookie, changes) {
+  const body = { washMinutes: 45, noShowMinutes: 10, dailyLimit: 0, ...changes };
+  return fetch(`${s.base}/admin/settings`, form({ cookie, ...body }));
+}
+
+test('wait estimate: each person ahead takes one wash', () => {
+  const at = 1_000_000_000;
+  const list = [
+    { id: 'a', status: 'washing', startedAt: at - 15 * 60000 },
+    { id: 'b', status: 'waiting' },
+    { id: 'c', status: 'waiting' },
+  ];
+  const est = estimate(list, { washMinutes: 45 }, at);
+  assert.strictEqual(est.washLeft, 30 * 60000);
+  assert.strictEqual(est.startIn.get('b'), 30 * 60000);
+  assert.strictEqual(est.startIn.get('c'), 75 * 60000);
+});
+
+test('settings are validated', async () => {
+  const s = await setup();
+  try {
+    const admin = await adminCookie(s);
+    assert.strictEqual((await saveSettings(s, admin, { washMinutes: 5 })).status, 400);
+    assert.strictEqual((await saveSettings(s, admin, { noShowMinutes: 'abc' })).status, 400);
+    assert.strictEqual((await fetch(`${s.base}/admin/settings`, form({ washMinutes: 60 }))).status, 302, 'needs login');
+    assert.strictEqual(s.db().settings.washMinutes, 45);
+    assert.strictEqual((await saveSettings(s, admin, { washMinutes: 60, dailyLimit: 20 })).status, 302);
+    assert.deepStrictEqual(s.db().settings, { washMinutes: 60, noShowMinutes: 10, dailyLimit: 20 });
+  } finally { s.close(); }
+});
+
+test('daily limit makes a day full', async () => {
+  const s = await setup();
+  try {
+    const join = (name, day) => fetch(`${s.base}/join`, form({ t: s.token(), name, house: 'H', day }));
+    const admin = await adminCookie(s);
+    await saveSettings(s, admin, { dailyLimit: 1 });
+    assert.strictEqual((await join('Ben', 'today')).status, 302);
+    const full = await join('Cat', 'today');
+    assert.strictEqual(full.status, 400);
+    assert.match(await full.text(), /full/);
+    assert.strictEqual((await join('Cat', 'tomorrow')).status, 302, 'tomorrow has its own limit');
+  } finally { s.close(); }
+});
+
+test('home page shows an estimated wait', async () => {
+  const s = await setup();
+  try {
+    await joinAs(s, 'Ann');
+    const benCookie = await joinAs(s, 'Ben');
+    const admin = await adminCookie(s);
+    await fetch(`${s.base}/admin/next/${s.db().entries[0].date}`, form({ cookie: admin }));
+    await fetch(`${s.base}/admin/start/${s.db().entries[0].id}`, form({ cookie: admin }));
+    s.clock.t += 15 * 60000;
+    const home = await (await fetch(`${s.base}/`, { headers: { cookie: benCookie } })).text();
+    assert.match(home, /You&#39;re next!|You're next!/);
+    assert.match(home, /about 30 min/);
+    assert.match(home, /30 min left/);
+  } finally { s.close(); }
+});
+
+test('laundry room screen needs its secret link', async () => {
+  const s = await setup();
+  try {
+    assert.strictEqual((await fetch(`${s.base}/display`)).status, 403);
+    const key = s.db().displayKey;
+    const page = await fetch(`${s.base}/display?k=${key}`);
+    assert.strictEqual(page.status, 200);
+    assert.match(await page.text(), /<svg/);
+    const admin = await adminCookie(s);
+    await fetch(`${s.base}/admin/rotate-qr`, form({ cookie: admin }));
+    assert.strictEqual((await fetch(`${s.base}/display?k=${key}`)).status, 403, 'new code replaces the screen link too');
+  } finally { s.close(); }
+});
+
+test('a student can say they are done, which frees the machine for the next person', async () => {
+  const s = await setup();
+  try {
+    const annCookie = await joinAs(s, 'Ann');
+    const benCookie = await joinAs(s, 'Ben');
+    const admin = await adminCookie(s);
+    await fetch(`${s.base}/admin/next/${s.db().entries[0].date}`, form({ cookie: admin }));
+    const annId = s.db().entries[0].id;
+    await fetch(`${s.base}/admin/start/${annId}`, form({ cookie: admin }));
+
+    const page = await (await fetch(`${s.base}/`, { headers: { cookie: annCookie } })).text();
+    assert.match(page, /I&#39;m done|I'm done/);
+
+    // someone else can't finish Ann's wash
+    await fetch(`${s.base}/finish/${annId}`, form({ cookie: benCookie }));
+    assert.deepStrictEqual(statuses(s), ['Ann:washing', 'Ben:waiting']);
+
+    const before = s.pushes.length;
+    const res = await fetch(`${s.base}/finish/${annId}`, form({ cookie: annCookie }));
+    assert.strictEqual(res.headers.get('location'), '/?m=finished');
+    await tick();
+    assert.deepStrictEqual(statuses(s), ['Ann:done', 'Ben:called']);
+    const sent = s.pushes.slice(before);
+    assert.ok(sent.some((p) => p.endpoint.endsWith('Ben') && /your turn/.test(p.title)), 'Ben is told it is his turn');
+    assert.ok(!sent.some((p) => p.endpoint.endsWith('Ann')), 'Ann is not told to collect laundry she already took');
+  } finally { s.close(); }
+});
+
+test('a called student can start their own wash', async () => {
+  const s = await setup();
+  try {
+    const annCookie = await joinAs(s, 'Ann');
+    const benCookie = await joinAs(s, 'Ben');
+    const admin = await adminCookie(s);
+    await fetch(`${s.base}/admin/next/${s.db().entries[0].date}`, form({ cookie: admin }));
+    const annId = s.db().entries[0].id;
+
+    const page = await (await fetch(`${s.base}/`, { headers: { cookie: annCookie } })).text();
+    assert.match(page, /I&#39;m here|I'm here/);
+
+    // only Ann's phone can start Ann's wash, and only once she's called
+    await fetch(`${s.base}/arrive/${annId}`, form({ cookie: benCookie }));
+    await fetch(`${s.base}/arrive/${s.db().entries[1].id}`, form({ cookie: benCookie }));
+    assert.deepStrictEqual(statuses(s), ['Ann:called', 'Ben:waiting']);
+
+    const res = await fetch(`${s.base}/arrive/${annId}`, form({ cookie: annCookie }));
+    assert.strictEqual(res.headers.get('location'), '/?m=started');
+    assert.deepStrictEqual(statuses(s), ['Ann:washing', 'Ben:waiting']);
+
+    // ...and the whole turn can run without staff
+    await fetch(`${s.base}/finish/${annId}`, form({ cookie: annCookie }));
+    assert.deepStrictEqual(statuses(s), ['Ann:done', 'Ben:called']);
   } finally { s.close(); }
 });

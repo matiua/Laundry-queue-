@@ -35,6 +35,19 @@
     setInterval(tick, 1000);
   }
 
+  // "x min left" for the running wash, and the clock on the laundry room screen.
+  const lefts = document.querySelectorAll('[data-left-for]');
+  const clock = document.querySelector('[data-clock]');
+  const tickSlow = () => {
+    const now = Date.now();
+    lefts.forEach((el) => {
+      const left = Math.ceil((Number(el.dataset.leftFor) - now) / 60000);
+      el.textContent = left > 0 ? `${left} min left` : 'Finishing up';
+    });
+    if (clock) clock.textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+  };
+  if (lefts.length || clock) { tickSlow(); setInterval(tickSlow, 5000); }
+
   // Your turn: buzz the phone if the page is open.
   if (document.querySelector('.my-spot-called') && navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
 
