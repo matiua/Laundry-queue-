@@ -249,3 +249,44 @@ main.wrap { padding-top: 24px; padding-bottom: 48px; }
   .poster-inner { margin: 0 auto; border: 0; }
   .poster-top { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* --- turns: called state, countdown, notifications --- */
+.chip-called { background: #fde8ea; color: #c22a37; }
+.q-called .q-pos, .a-called .q-pos { background: var(--red); color: #fff; }
+.q-pos .icon-bell { width: 18px; height: 18px; }
+.missed { color: var(--red); font-weight: 600; }
+
+.countdown { font-variant-numeric: tabular-nums; font-weight: 800; }
+.countdown.urgent { color: var(--red); }
+
+.my-spot-text { flex: 1; min-width: 200px; }
+.my-spot-push { width: 100%; }
+.my-spot-push .btn .icon { width: 16px; height: 16px; }
+.push-note { display: flex; gap: 8px; align-items: flex-start; font-size: .82rem; font-weight: 600; margin: 0; }
+.push-note .icon { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+.btn-navy { background: var(--navy); border-color: var(--navy); color: #fff; }
+.btn-navy:hover { background: var(--navy-deep); }
+.btn[hidden], [hidden] { display: none !important; }
+
+.my-spot-called { background: #fff; border: 3px solid var(--red); animation: ring 1.6s ease-in-out infinite; }
+.my-spot-called .my-spot-label { color: var(--red); opacity: 1; }
+.my-spot-called .my-spot-head { color: var(--red); font-size: 1.6rem; }
+.my-spot-called .countdown { font-size: 1.1rem; color: var(--navy); }
+.my-spot-called .countdown.urgent { color: var(--red); }
+@keyframes ring { 50% { box-shadow: 0 0 0 8px rgba(237, 74, 86, .35); } }
+@media (prefers-reduced-motion: reduce) { .my-spot-called { animation: none; } }
+
+.called-panel {
+  border: 2px solid var(--red); background: #fff6f7; border-radius: 14px; padding: 16px; margin-bottom: 12px;
+  display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between;
+}
+.called-text { display: flex; gap: 12px; align-items: center; }
+.called-text > .icon-bell { width: 34px; height: 34px; color: var(--red); flex: none; }
+.called-text p { margin: 0; }
+.called-text .now-label { color: var(--red); opacity: 1; }
+.called-name { font-size: 1.25rem; font-weight: 800; color: var(--navy); }
+.called-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.called-actions form { margin: 0; }
+@media (max-width: 560px) { .called-actions, .called-actions form, .called-actions .btn { width: 100%; } }
+.my-spot-called .btn-light { border-color: #cdd5e5; }
+.my-spot-called .btn-light:hover { border-color: var(--navy); }

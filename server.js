@@ -2,8 +2,10 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const QRCode = require('qrcode');
+const webpush = require('web-push');
 const { Store, todayIn, addDays } = require('./lib/store');
 const views = require('./lib/views');
+const { createTurns } = require('./lib/turns');
 
 const TIME_ZONE = 'Europe/London';
 const ADMIN_SESSION_HOURS = 12;
@@ -13,14 +15,34 @@ function createApp({
   adminPassword = process.env.ADMIN_PASSWORD,
   publicUrl = process.env.PUBLIC_URL,
   now = () => new Date(),
+  noShowMinutes = Number(process.env.NO_SHOW_MINUTES) || 10,
+  vapidSubject = process.env.VAPID_SUBJECT || 'mailto:laundry@example.com',
+  sendPush, // injectable for tests; defaults to real Web Push
 } = {}) {
   if (!adminPassword) throw new Error('ADMIN_PASSWORD must be set');
 
   const store = new Store(dataFile);
   const app = express();
+
+  // --- notifications -----------------------------------------------------------
+  const push = sendPush || ((sub, payload) => {
+    webpush.setVapidDetails(vapidSubject, store.vapid.publicKey, store.vapid.privateKey);
+    return webpush.sendNotification(sub, payload, { TTL: 15 * 60 });
+  });
+  const notify = (device, payload) => {
+    for (const sub of store.subscriptionsFor(device)) {
+      Promise.resolve(push(sub, JSON.stringify(payload))).catch((err) => {
+        if (err && (err.statusCode === 404 || err.statusCode === 410)) store.removeSubscription(sub.endpoint);
+        else console.error('Push failed:', err && err.message);
+      });
+    }
+  };
+  const turns = createTurns({ store, notify, timeoutMs: noShowMinutes * 60000 });
+  const nowMs = () => now().getTime();
   app.disable('x-powered-by');
   app.set('trust proxy', true);
   app.use(express.urlencoded({ extended: false }));
+  app.use(express.json({ limit: '10kb' }));
   app.use(express.static(path.join(__dirname, 'public')));
 
   // --- helpers --------------------------------------------------------------
@@ -41,6 +63,9 @@ function createApp({
     const today = todayIn(TIME_ZONE, now());
     return { today, tomorrow: addDays(today, 1) };
   };
+  const sweep = () => turns.sweep(days().today, nowMs());
+  // Keep no-show timers running even when nobody has a page open.
+  setInterval(sweep, 15000).unref();
 
   // Each phone gets an anonymous id so students can only remove their own entry.
   const deviceId = (req, res) => {
@@ -75,19 +100,20 @@ function createApp({
   app.get('/', (req, res) => {
     const { today, tomorrow } = days();
     store.prune(today);
+    sweep();
     const msgs = { joined: "You're on the list!", left: 'You have been taken off the list.' };
     const device = deviceId(req, res);
     const todayList = store.list(today);
     const tomorrowList = store.list(tomorrow);
     const mySpots = [['today', todayList], ['tomorrow', tomorrowList]].flatMap(([when, list]) => {
       const active = list.filter((e) => e.status !== 'done');
-      const entry = active.find((e) => e.deviceId === device);
-      if (!entry) return [];
-      const ahead = active.filter((e) => e.status === 'waiting' && e.createdAt < entry.createdAt).length;
-      return [{ entry, ahead, when }];
+      const i = active.findIndex((e) => e.deviceId === device);
+      if (i < 0) return [];
+      const ahead = active.slice(0, i).filter((e) => e.status !== 'washing').length;
+      return [{ entry: active[i], ahead, when }];
     });
     res.send(views.homePage({
-      today, tomorrow, todayList, tomorrowList, mySpots,
+      today, tomorrow, todayList, tomorrowList, mySpots, noShowMs: noShowMinutes * 60000,
       deviceId: device,
       msg: msgs[req.query.m],
       highlight: req.query.id,
@@ -118,7 +144,7 @@ function createApp({
       return fail(`${values.name} is already on ${values.day}'s list.`);
     }
 
-    const entry = store.add(date, { name: values.name, house: values.house, deviceId: device });
+    const entry = store.add(date, { name: values.name, house: values.house, deviceId: device }, nowMs());
     // Remember name/house so next time is a single tap.
     setCookie(res, req, 'lq_name', values.name, 60 * 60 * 24 * 365);
     setCookie(res, req, 'lq_house', values.house, 60 * 60 * 24 * 365);
@@ -127,8 +153,29 @@ function createApp({
 
   app.post('/leave/:id', (req, res) => {
     const entry = store.get(req.params.id);
-    if (entry && entry.status === 'waiting' && entry.deviceId === cookies(req).lq_device) store.remove(entry.id);
+    if (entry && ['waiting', 'called'].includes(entry.status) && entry.deviceId === cookies(req).lq_device) {
+      store.remove(entry.id);
+      if (entry.status === 'called') turns.callNext(entry.date, nowMs());
+    }
     res.redirect('/?m=left');
+  });
+
+  // --- live updates + push subscriptions ----------------------------------------
+  app.get('/api/version', (req, res) => {
+    sweep();
+    res.set('Cache-Control', 'no-store').json({ v: store.version });
+  });
+
+  app.get('/api/push-key', (req, res) => res.json({ key: store.vapid.publicKey }));
+
+  app.post('/api/subscribe', (req, res) => {
+    const sub = req.body && req.body.subscription;
+    const device = cookies(req).lq_device;
+    const valid = sub && typeof sub.endpoint === 'string' && /^https:\/\//.test(sub.endpoint) && sub.endpoint.length < 1000
+      && sub.keys && typeof sub.keys.p256dh === 'string' && typeof sub.keys.auth === 'string';
+    if (!device || !valid) return res.status(400).json({ ok: false });
+    store.addSubscription(device, { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } });
+    res.json({ ok: true });
   });
 
   // --- admin ----------------------------------------------------------------
@@ -150,6 +197,7 @@ function createApp({
 
   app.get('/admin', requireAdmin, async (req, res, next) => {
     try {
+      sweep();
       const { today, tomorrow } = days();
       const day = req.query.day === 'tomorrow' ? 'tomorrow' : 'today';
       const date = day === 'tomorrow' ? tomorrow : today;
@@ -162,6 +210,7 @@ function createApp({
         counts: { today: active(today), tomorrow: active(tomorrow) },
         qrSvg: await QRCode.toString(url, { type: 'svg', margin: 1, color: { dark: '#0c2c65' } }),
         joinUrl: url,
+        noShowMs: noShowMinutes * 60000,
         msg: msgs[req.query.m],
       }));
     } catch (err) { next(err); }
@@ -177,25 +226,23 @@ function createApp({
   const back = (req, res, m) =>
     res.redirect(`/admin?day=${req.body.day === 'tomorrow' ? 'tomorrow' : 'today'}${m ? `&m=${m}` : ''}`);
 
-  const statusAction = (status) => (req, res) => {
-    store.setStatus(req.params.id, status);
+  const action = (fn) => (req, res) => {
+    fn(req.params.id);
     back(req, res);
   };
-  app.post('/admin/start/:id', requireAdmin, statusAction('washing'));
-  app.post('/admin/done/:id', requireAdmin, statusAction('done'));
-  app.post('/admin/reset/:id', requireAdmin, statusAction('waiting'));
+  app.post('/admin/start/:id', requireAdmin, action((id) => turns.start(id)));
+  app.post('/admin/done/:id', requireAdmin, action((id) => turns.finish(id)));
+  app.post('/admin/skip/:id', requireAdmin, action((id) => turns.skip(id, nowMs())));
+  app.post('/admin/reset/:id', requireAdmin, action((id) => store.setStatus(id, 'waiting')));
 
   app.post('/admin/remove/:id', requireAdmin, (req, res) => {
     store.remove(req.params.id);
     back(req, res);
   });
 
-  // One tap: finish whatever is washing and start the next person waiting.
+  // One tap: finish whatever is washing and call the next person.
   app.post('/admin/next/:date', requireAdmin, (req, res) => {
-    const list = store.list(req.params.date);
-    list.filter((e) => e.status === 'washing').forEach((e) => store.setStatus(e.id, 'done'));
-    const next = list.find((e) => e.status === 'waiting');
-    if (next) store.setStatus(next.id, 'washing');
+    turns.finishAndCallNext(req.params.date, nowMs());
     back(req, res);
   });
 
@@ -218,7 +265,8 @@ if (require.main === module) {
     process.exit(1);
   }
   const port = Number(process.env.PORT) || 3000;
-  createApp().listen(port, () => console.log(`Laundry queue running on http://localhost:${port}`));
+  const app = createApp();
+  app.listen(port, () => console.log(`Laundry queue running on http://localhost:${port}`));
 }
 
 module.exports = { createApp };
