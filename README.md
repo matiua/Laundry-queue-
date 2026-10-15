@@ -27,6 +27,7 @@
 | 📍 **Your place in line** | "You're 3rd in line, 2 people ahead of you." Your row is highlighted, and the page updates itself. |
 | ⏳ **Wait-time estimates** | "Estimated turn: about 1 h 30 min (around 12:49)", plus "45 min left" on the current wash. |
 | 🔔 **Phone notifications** | "🧺 It's your turn!" when staff call you, and "✅ Your wash is done" when it's finished. |
+| ✅ **"I'm done" button** | When their wash is finished and the laundry is out, students tap **I'm done — machine is free**. The next person is called and notified straight away. |
 | ⏱️ **No-show handling** | Called students have 10 minutes to arrive. If they don't, they move to the back and the next person is called. A second miss takes them off the list. |
 | 👆 **One-tap for staff** | **Call next** → **Arrived — start wash** → **Done**. Tapping **Done** calls the next person automatically. |
 | 📺 **Laundry room screen** | A full-screen page for a TV or tablet: who's washing, who's called, who's next, a clock and the QR code to join. |
@@ -64,7 +65,7 @@
 1. Log in at **`/admin`** with the staff password.
 2. Tap **Call next**. The student is notified and has 10 minutes to turn up.
 3. When they arrive, tap **Arrived — start wash**. If they don't arrive, tap **Not here — skip** (or let the timer do it).
-4. When the wash finishes, tap **Done**. The student is told to collect their laundry, and the next person is called automatically.
+4. When the wash finishes, tap **Done**. The student is told to collect their laundry, and the next person is called automatically. Students can also do this themselves with **I'm done — machine is free** on their phone.
 
 Today and tomorrow are on separate tabs. Students who have missed a turn are marked (e.g. *missed 1×*).
 
@@ -151,7 +152,7 @@ If notifications are off or blocked, the queue still works: the page updates by 
 ## 🛠️ How it works
 
 ```
-waiting ──Call next──▶ called ──Arrived──▶ washing ──Done──▶ done
+waiting ──Call next──▶ called ──Arrived──▶ washing ──Done / "I'm done"──▶ done
    ▲                     │                                  │
    │                     └─ no-show (10 min or "Not here")  └─ next person is
    └──── back of the queue ◀─┘  (2nd miss: removed)            called automatically

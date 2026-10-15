@@ -120,7 +120,11 @@ function createApp({
     const { today, tomorrow } = days();
     store.prune(today);
     sweep();
-    const msgs = { joined: "You're on the list!", left: 'You have been taken off the list.' };
+    const msgs = {
+      joined: "You're on the list!",
+      left: 'You have been taken off the list.',
+      finished: 'Thanks! The next person has been told the machine is free.',
+    };
     const device = deviceId(req, res);
     const todayList = store.list(today);
     const tomorrowList = store.list(tomorrow);
@@ -179,6 +183,14 @@ function createApp({
       if (entry.status === 'called') turns.callNext(entry.date, nowMs(), { except: entry.id });
     }
     res.redirect('/?m=left');
+  });
+
+  // A student says their wash is finished and the machine is free.
+  app.post('/finish/:id', (req, res) => {
+    const entry = store.get(req.params.id);
+    if (!entry || entry.status !== 'washing' || entry.deviceId !== cookies(req).lq_device) return res.redirect('/');
+    turns.finish(entry.id, nowMs(), { bySelf: true });
+    res.redirect('/?m=finished');
   });
 
   // --- live updates + push subscriptions ----------------------------------------

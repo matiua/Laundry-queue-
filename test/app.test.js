@@ -304,3 +304,31 @@ test('laundry room screen needs its secret link', async () => {
     assert.strictEqual((await fetch(`${s.base}/display?k=${key}`)).status, 403, 'new code replaces the screen link too');
   } finally { s.close(); }
 });
+
+test('a student can say they are done, which frees the machine for the next person', async () => {
+  const s = await setup();
+  try {
+    const annCookie = await joinAs(s, 'Ann');
+    const benCookie = await joinAs(s, 'Ben');
+    const admin = await adminCookie(s);
+    await fetch(`${s.base}/admin/next/${s.db().entries[0].date}`, form({ cookie: admin }));
+    const annId = s.db().entries[0].id;
+    await fetch(`${s.base}/admin/start/${annId}`, form({ cookie: admin }));
+
+    const page = await (await fetch(`${s.base}/`, { headers: { cookie: annCookie } })).text();
+    assert.match(page, /I&#39;m done|I'm done/);
+
+    // someone else can't finish Ann's wash
+    await fetch(`${s.base}/finish/${annId}`, form({ cookie: benCookie }));
+    assert.deepStrictEqual(statuses(s), ['Ann:washing', 'Ben:waiting']);
+
+    const before = s.pushes.length;
+    const res = await fetch(`${s.base}/finish/${annId}`, form({ cookie: annCookie }));
+    assert.strictEqual(res.headers.get('location'), '/?m=finished');
+    await tick();
+    assert.deepStrictEqual(statuses(s), ['Ann:done', 'Ben:called']);
+    const sent = s.pushes.slice(before);
+    assert.ok(sent.some((p) => p.endpoint.endsWith('Ben') && /your turn/.test(p.title)), 'Ben is told it is his turn');
+    assert.ok(!sent.some((p) => p.endpoint.endsWith('Ann')), 'Ann is not told to collect laundry she already took');
+  } finally { s.close(); }
+});

@@ -449,3 +449,5 @@ main.wrap { padding-top: 24px; padding-bottom: 48px; }
   .nav { gap: 14px; }
   .tint .nav a[href="/"] { display: none; }
 }
+
+.finish-form { width: 100%; margin: 0; }
