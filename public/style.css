@@ -306,66 +306,15 @@ main.wrap { padding-top: 24px; padding-bottom: 48px; }
 .my-spot-called .btn-light { border-color: var(--line-strong); }
 .my-spot-called .btn-light:hover { border-color: var(--navy); }
 
-/* --- machines, estimates, hours --- */
-.hero-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
-.hero-top h1 { margin: 0; }
-.hours-chip {
-  display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 700; border-radius: 999px;
-  padding: 6px 12px; background: rgba(255, 255, 255, .1); color: #fff; border: 1px solid rgba(255, 255, 255, .18);
-}
-.hours-chip .icon { width: 15px; height: 15px; }
-.hours-chip.open .icon { color: #7fe0a0; }
-.hours-chip.closed { background: rgba(237, 74, 86, .2); border-color: rgba(237, 74, 86, .45); }
-.page-head .hours-chip, .tint .hours-chip { background: var(--surface); color: var(--ink); border-color: var(--line); }
-.tint .hours-chip.open .icon { color: var(--green); }
-.tint .hours-chip.closed { background: var(--red-soft); color: var(--red); border-color: var(--red-line); }
-
-.machines { display: grid; gap: 12px; margin-bottom: 12px; }
-@media (min-width: 560px) { .machines-2, .machines-3, .machines-4 { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 860px) { .machines-3 { grid-template-columns: repeat(3, 1fr); } .machines-4 { grid-template-columns: repeat(4, 1fr); } }
-.machine {
-  display: flex; align-items: center; gap: 16px; padding: 16px 18px; border-radius: var(--radius);
-  background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .12);
-}
-.machine .icon-washer { width: 48px; height: 48px; flex: none; color: var(--gold); }
-.machine.free .icon-washer { color: #7fe0a0; }
-.machine.free .icon-washer .wave { animation: none; opacity: .4; }
-.machine-text { flex: 1; min-width: 0; }
-.machine .now-value { overflow-wrap: anywhere; }
-.machine.free .now-value { color: #7fe0a0; }
-.progress { display: block; height: 6px; border-radius: 999px; background: rgba(255, 255, 255, .15); margin: 8px 0 4px; overflow: hidden; }
-.progress-bar { display: block; height: 100%; border-radius: inherit; background: var(--gold); transition: width 1s linear; }
-.progress-text { font-size: .75rem; font-weight: 600; opacity: .8; }
-.now-side { margin-bottom: 0; }
-.now-sub { font-size: .75rem; font-weight: 600; opacity: .7; }
+/* --- estimates --- */
+.now-sub { font-size: .8rem; font-weight: 600; opacity: .75; margin: 2px 0 0; }
 .my-spot .eta { display: block; margin-top: 4px; }
 .my-spot .warn { display: block; margin-top: 6px; font-weight: 700; }
-.my-spot-washing .progress { background: rgba(7, 29, 71, .15); max-width: 280px; }
-.my-spot-washing .progress-bar { background: var(--navy); }
 .q-eta { font-size: .78rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
-.hours-note { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: .8rem; color: var(--muted); margin: 4px 0 0; }
-.hours-note .icon { width: 15px; height: 15px; }
 
-/* admin: machines + tools */
+/* admin: tools */
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .page-head .page-title { margin: 0; }
-.nav a + a { margin-left: 0; }
-.a-machines { display: grid; gap: 10px; margin-bottom: 16px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
-.a-machine {
-  display: flex; align-items: center; gap: 12px; background: var(--surface); border-radius: 14px; padding: 14px 16px;
-  box-shadow: var(--shadow); border-left: 5px solid var(--green);
-}
-.a-machine.busy { border-left-color: var(--sky); }
-.a-machine .icon-washer { width: 34px; height: 34px; flex: none; color: var(--green); }
-.a-machine.busy .icon-washer { color: var(--sky); }
-.a-machine:not(.busy) .wave { animation: none; }
-.a-machine form { margin: 0; }
-.a-machine .now-label { color: var(--muted); opacity: 1; }
-.a-machine-name { margin: 0; font-weight: 800; color: var(--ink); }
-.a-machine:not(.busy) .a-machine-name { color: var(--green); }
-.a-machine .progress { background: var(--soft-2); }
-.a-machine .progress-bar { background: var(--sky); }
-.a-machine .progress-text { color: var(--muted); }
 .next-form .btn .icon { width: 18px; height: 18px; vertical-align: -3px; margin-right: 4px; }
 .tool-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .tool-text { display: flex; gap: 14px; align-items: flex-start; flex: 1; min-width: 240px; }
@@ -400,15 +349,18 @@ main.wrap { padding-top: 24px; padding-bottom: 48px; }
 .d-title .hero-date { font-size: .85em; }
 .d-clock { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: .4em; }
 .d-clock [data-clock] { font-size: 3em; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
-.d-clock .hours-chip { font-size: .7em; }
 .d-main { flex: 1; display: grid; grid-template-columns: 1.6fr 1fr; gap: 3vw; min-height: 0; }
 .d-left { display: flex; flex-direction: column; gap: 2vh; min-width: 0; }
-.machines-big .machine { padding: 1.2em 1.4em; }
-.machines-big .icon-washer { width: 3.6em; height: 3.6em; }
-.machines-big .now-value { font-size: 1.8em; }
-.machines-big .now-label { font-size: .75em; }
-.machines-big .progress { height: .5em; }
-.machines-big .progress-text { font-size: .85em; }
+.d-now {
+  display: flex; align-items: center; gap: 1.2em; padding: 1.2em 1.4em; border-radius: var(--radius);
+  background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .12);
+}
+.d-now .icon-washer { width: 4em; height: 4em; color: var(--gold); flex: none; }
+.d-now.free .icon-washer { color: #7fe0a0; }
+.d-now.free .wave { animation: none; opacity: .4; }
+.d-now p { margin: 0; }
+.d-now-name { font-size: 2.2em; font-weight: 800; line-height: 1.15; }
+.d-now .now-sub { font-size: .9em; }
 .d-called { display: grid; gap: 1vh; }
 .d-called-item {
   display: flex; align-items: center; gap: 1em; background: #fff; color: var(--navy); border-radius: var(--radius);
@@ -494,10 +446,6 @@ main.wrap { padding-top: 24px; padding-bottom: 48px; }
 }
 
 @media (max-width: 559px) {
-  .machines-2, .machines-3, .machines-4 { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .machines-2 .machine, .machines-3 .machine, .machines-4 .machine { padding: 12px 14px; }
-  .machines-2 .machine .icon-washer, .machines-3 .machine .icon-washer, .machines-4 .machine .icon-washer { display: none; }
-  .machines-2 .now-value, .machines-3 .now-value, .machines-4 .now-value { font-size: 1.05rem; }
   .nav { gap: 14px; }
   .tint .nav a[href="/"] { display: none; }
 }

@@ -115,7 +115,6 @@ test('admin can log in, change status, remove and rotate QR', async () => {
     await fetch(`${s.base}/admin/next/${date}`, form({ cookie }));
     assert.deepStrictEqual(s.db().entries.map((e) => e.status), ['called', 'waiting']);
     await fetch(`${s.base}/admin/start/${s.db().entries[0].id}`, form({ cookie }));
-    assert.strictEqual(s.db().entries[0].machine, 1);
     await fetch(`${s.base}/admin/next/${date}`, form({ cookie }));
     assert.deepStrictEqual(s.db().entries.map((e) => e.status), ['washing', 'waiting'], 'no free machine, nobody called');
     await fetch(`${s.base}/admin/done/${s.db().entries[0].id}`, form({ cookie }));
@@ -232,80 +231,47 @@ test('subscribe rejects bad input', async () => {
 const { estimate } = require('../lib/turns');
 
 async function saveSettings(s, cookie, changes) {
-  const body = { machines: 1, washMinutes: 45, noShowMinutes: 10, openFrom: '07:00', openUntil: '22:00', dailyLimit: 0, ...changes };
+  const body = { washMinutes: 45, noShowMinutes: 10, dailyLimit: 0, ...changes };
   return fetch(`${s.base}/admin/settings`, form({ cookie, ...body }));
 }
 
-test('wait estimate simulates the machines', () => {
+test('wait estimate: each person ahead takes one wash', () => {
   const at = 1_000_000_000;
   const list = [
-    { id: 'a', status: 'washing', machine: 1, startedAt: at - 15 * 60000 },
+    { id: 'a', status: 'washing', startedAt: at - 15 * 60000 },
     { id: 'b', status: 'waiting' },
     { id: 'c', status: 'waiting' },
   ];
-  const one = estimate(list, { machines: 1, washMinutes: 45 }, at);
-  assert.strictEqual(one.startIn.get('b'), 30 * 60000);
-  assert.strictEqual(one.startIn.get('c'), 75 * 60000);
-  assert.strictEqual(one.machines[0].left, 30 * 60000);
-  const two = estimate(list, { machines: 2, washMinutes: 45 }, at);
-  assert.strictEqual(two.startIn.get('b'), 0, 'second machine is free');
-  assert.strictEqual(two.startIn.get('c'), 30 * 60000);
-});
-
-test('several machines: one call per free machine, Done frees a machine', async () => {
-  const s = await setup();
-  try {
-    const admin = await adminCookie(s);
-    assert.strictEqual((await saveSettings(s, admin, { machines: 2 })).status, 302);
-    for (const n of ['Ann', 'Ben', 'Cat']) await joinAs(s, n);
-    const date = s.db().entries[0].date;
-    await fetch(`${s.base}/admin/next/${date}`, form({ cookie: admin }));
-    assert.deepStrictEqual(statuses(s), ['Ann:called', 'Ben:called', 'Cat:waiting']);
-    const id = (n) => s.db().entries.find((e) => e.name === n).id;
-    await fetch(`${s.base}/admin/start/${id('Ann')}`, form({ cookie: admin }));
-    await fetch(`${s.base}/admin/start/${id('Ben')}`, form({ cookie: admin }));
-    assert.deepStrictEqual(s.db().entries.map((e) => e.machine ?? null), [1, 2, null]);
-    await fetch(`${s.base}/admin/done/${id('Ann')}`, form({ cookie: admin }));
-    assert.deepStrictEqual(statuses(s), ['Ann:done', 'Ben:washing', 'Cat:called']);
-    await fetch(`${s.base}/admin/start/${id('Cat')}`, form({ cookie: admin }));
-    assert.strictEqual(s.db().entries.find((e) => e.name === 'Cat').machine, 1, 'takes the freed machine');
-    const page = await (await fetch(`${s.base}/admin`, { headers: { cookie: admin } })).text();
-    assert.match(page, /Washer 2/);
-  } finally { s.close(); }
+  const est = estimate(list, { washMinutes: 45 }, at);
+  assert.strictEqual(est.washLeft, 30 * 60000);
+  assert.strictEqual(est.startIn.get('b'), 30 * 60000);
+  assert.strictEqual(est.startIn.get('c'), 75 * 60000);
 });
 
 test('settings are validated', async () => {
   const s = await setup();
   try {
     const admin = await adminCookie(s);
-    assert.strictEqual((await saveSettings(s, admin, { machines: 0 })).status, 400);
-    assert.strictEqual((await saveSettings(s, admin, { openFrom: '23:00', openUntil: '07:00' })).status, 400);
-    assert.strictEqual((await saveSettings(s, admin, { washMinutes: 'abc' })).status, 400);
-    assert.strictEqual((await fetch(`${s.base}/admin/settings`, form({ machines: 3 }))).status, 302, 'needs login');
-    assert.strictEqual(s.db().settings.machines, 1);
-    assert.strictEqual((await saveSettings(s, admin, { machines: 3, washMinutes: 60 })).status, 302);
-    assert.strictEqual(s.db().settings.machines, 3);
-    assert.strictEqual(s.db().settings.washMinutes, 60);
+    assert.strictEqual((await saveSettings(s, admin, { washMinutes: 5 })).status, 400);
+    assert.strictEqual((await saveSettings(s, admin, { noShowMinutes: 'abc' })).status, 400);
+    assert.strictEqual((await fetch(`${s.base}/admin/settings`, form({ washMinutes: 60 }))).status, 302, 'needs login');
+    assert.strictEqual(s.db().settings.washMinutes, 45);
+    assert.strictEqual((await saveSettings(s, admin, { washMinutes: 60, dailyLimit: 20 })).status, 302);
+    assert.deepStrictEqual(s.db().settings, { washMinutes: 60, noShowMinutes: 10, dailyLimit: 20 });
   } finally { s.close(); }
 });
 
-test('after closing time only tomorrow is open; daily limit makes a day full', async () => {
+test('daily limit makes a day full', async () => {
   const s = await setup();
   try {
     const join = (name, day) => fetch(`${s.base}/join`, form({ t: s.token(), name, house: 'H', day }));
-    s.clock.t = Date.parse('2026-10-15T21:30:00Z'); // 22:30 in the UK
-    assert.strictEqual((await join('Ann', 'today')).status, 400);
-    const page = await (await fetch(`${s.base}/join?t=${s.token()}`)).text();
-    assert.match(page, /value="today" disabled/);
-    assert.strictEqual((await join('Ann', 'tomorrow')).status, 302);
-
-    s.clock.t = Date.parse('2026-10-15T09:00:00Z');
     const admin = await adminCookie(s);
     await saveSettings(s, admin, { dailyLimit: 1 });
     assert.strictEqual((await join('Ben', 'today')).status, 302);
     const full = await join('Cat', 'today');
     assert.strictEqual(full.status, 400);
     assert.match(await full.text(), /full/);
+    assert.strictEqual((await join('Cat', 'tomorrow')).status, 302, 'tomorrow has its own limit');
   } finally { s.close(); }
 });
 

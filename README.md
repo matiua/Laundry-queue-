@@ -25,14 +25,12 @@
 | 📷 **QR-code sign-up** | Only students physically in the laundry room can join: they scan the poster on the wall. |
 | 📅 **Today or tomorrow** | Join today's queue, or put your name down for tomorrow. At midnight, tomorrow's list becomes today's on its own. |
 | 📍 **Your place in line** | "You're 3rd in line, 2 people ahead of you." Your row is highlighted, and the page updates itself. |
-| ⏳ **Wait-time estimates** | "Estimated turn: about 1 h 30 min (around 12:49)". It warns you if you probably won't fit in before closing time. |
-| 🧺 **Several machines** | Each washer shows who's in it with a live "45 min left" bar. One person is called per free machine. |
+| ⏳ **Wait-time estimates** | "Estimated turn: about 1 h 30 min (around 12:49)", plus "45 min left" on the current wash. |
 | 🔔 **Phone notifications** | "🧺 It's your turn!" when staff call you, and "✅ Your wash is done" when it's finished. |
 | ⏱️ **No-show handling** | Called students have 10 minutes to arrive. If they don't, they move to the back and the next person is called. A second miss takes them off the list. |
 | 👆 **One-tap for staff** | **Call next** → **Arrived — start wash** → **Done**. Tapping **Done** calls the next person automatically. |
-| 📺 **Laundry room screen** | A full-screen page for a TV or tablet: machines, who's called, who's next, a clock and the QR code to join. |
-| ⚙️ **Settings page** | Staff set the number of machines, wash length, time to turn up, opening hours and a daily sign-up limit, all on the site. |
-| 🕘 **Opening hours** | After closing time, sign-ups for today close and tomorrow stays open. A day can also be marked full. |
+| 📺 **Laundry room screen** | A full-screen page for a TV or tablet: who's washing, who's called, who's next, a clock and the QR code to join. |
+| ⚙️ **Settings page** | Staff set the wash length, time to turn up and a daily sign-up limit, all on the site. |
 | 🌙 **Dark mode** | Follows the phone's setting, which is easier on the eyes at night. |
 | 🖨️ **Printable poster** | A ready-to-print A4 poster with the QR code. Make a new code at any time to stop old posters and photos of them from working. |
 | 🎓 **Scarborough College look** | School logo, navy & gold colours and the Montserrat font. Designed for phones first. |
@@ -64,24 +62,24 @@
 </table>
 
 1. Log in at **`/admin`** with the staff password.
-2. Tap **Call next**. One student is called for each free machine. They're notified and have 10 minutes to turn up.
-3. When they arrive, tap **Arrived — start wash**. They go on the first free washer. If they don't arrive, tap **Not here — skip** (or let the timer do it).
-4. When a wash finishes, tap **Done** on that washer. The student is told to collect their laundry, and the next person is called automatically.
+2. Tap **Call next**. The student is notified and has 10 minutes to turn up.
+3. When they arrive, tap **Arrived — start wash**. If they don't arrive, tap **Not here — skip** (or let the timer do it).
+4. When the wash finishes, tap **Done**. The student is told to collect their laundry, and the next person is called automatically.
 
 Today and tomorrow are on separate tabs. Students who have missed a turn are marked (e.g. *missed 1×*).
 
 <table>
   <tr>
-    <td width="50%" align="center"><img src="docs/images/settings.png" alt="Settings page: machines, wash length, time to turn up, opening hours, daily limit" width="100%"><br><sub><strong>Settings</strong>: machines, wash length, no-show time, opening hours and a daily limit</sub></td>
+    <td width="50%" align="center"><img src="docs/images/settings.png" alt="Settings page: wash length, time to turn up, daily limit" width="100%"><br><sub><strong>Settings</strong>: wash length, time to turn up and a daily limit</sub></td>
     <td width="50%" align="center"><img src="docs/images/dark.png" alt="Queue page in dark mode" width="230"><br><sub><strong>Dark mode</strong> follows the phone's setting</sub></td>
   </tr>
 </table>
 
 ### 📺 Laundry room screen
 
-Put a TV or old tablet in the laundry room and open **Open screen** from the staff page. It shows each washer with time left, who's been called (with a countdown), who's next, a clock and a big QR code to join. It updates by itself.
+Put a TV or old tablet in the laundry room and open **Open screen** from the staff page. It shows who's washing and how long is left, who's been called (with a countdown), who's next, a clock and a big QR code to join. It updates by itself.
 
-<p align="center"><img src="docs/images/display.png" alt="Full-screen laundry room display with machines, queue and QR code" width="90%"></p>
+<p align="center"><img src="docs/images/display.png" alt="Full-screen laundry room display with who's washing, the queue and QR code" width="90%"></p>
 
 > 🔒 The screen link contains a secret key, because the screen shows the sign-up QR code. Clicking **New code** changes both.
 
@@ -117,7 +115,7 @@ Open **http://localhost:3000**. Staff log in at **http://localhost:3000/admin**.
 
 ### ⚙️ Settings
 
-Day-to-day settings (machines, wash length, time to turn up, opening hours, daily limit) are on the staff **Settings** page. These variables are set once on the server:
+Day-to-day settings (wash length, time to turn up, daily limit) are on the staff **Settings** page. These variables are set once on the server:
 
 | Variable | Required | What it does |
 |---|:---:|---|
@@ -153,10 +151,10 @@ If notifications are off or blocked, the queue still works: the page updates by 
 ## 🛠️ How it works
 
 ```
-waiting ──Call next──▶ called ──Arrived──▶ washing (Washer n) ──Done──▶ done
-   ▲                     │                                          │
-   │                     └─ no-show (10 min or "Not here")          └─ next person is
-   └──── back of the queue ◀─┘  (2nd miss: removed)                    called automatically
+waiting ──Call next──▶ called ──Arrived──▶ washing ──Done──▶ done
+   ▲                     │                                  │
+   │                     └─ no-show (10 min or "Not here")  └─ next person is
+   └──── back of the queue ◀─┘  (2nd miss: removed)            called automatically
 ```
 
 - **Server:** [Express](https://expressjs.com) with pages built on the server, so it's fast on any phone. Pages still work if JavaScript is turned off.
@@ -179,7 +177,7 @@ test/              automated tests (npm test)
 npm test
 ```
 
-The tests cover QR-only sign-up, one place per phone, leaving the queue, staff login and actions, calling, skipping, the no-show timer, removal after two misses, notifications, several machines, wait estimates, opening hours, the daily limit, settings checks and the laundry room screen link.
+The tests cover QR-only sign-up, one place per phone, leaving the queue, staff login and actions, calling, skipping, the no-show timer, removal after two misses, notifications, wait estimates, the daily limit, settings checks and the laundry room screen link.
 
 ---
 
