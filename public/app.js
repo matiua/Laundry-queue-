@@ -35,6 +35,24 @@
     setInterval(tick, 1000);
   }
 
+  // Wash progress bars and "x min left".
+  const bars = document.querySelectorAll('.progress[data-end]');
+  const lefts = document.querySelectorAll('[data-left-for]');
+  const clock = document.querySelector('[data-clock]');
+  const tickSlow = () => {
+    const now = Date.now();
+    bars.forEach((el) => {
+      const start = Number(el.dataset.start), end = Number(el.dataset.end);
+      el.firstElementChild.style.width = Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100)) + '%';
+    });
+    lefts.forEach((el) => {
+      const left = Math.ceil((Number(el.dataset.leftFor) - now) / 60000);
+      el.textContent = left > 0 ? `${left} min left` : 'Finishing up';
+    });
+    if (clock) clock.textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+  };
+  if (bars.length || lefts.length || clock) { tickSlow(); setInterval(tickSlow, 5000); }
+
   // Your turn: buzz the phone if the page is open.
   if (document.querySelector('.my-spot-called') && navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]);
 

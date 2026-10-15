@@ -5,7 +5,7 @@ const QRCode = require('qrcode');
 const webpush = require('web-push');
 const { Store, todayIn, addDays } = require('./lib/store');
 const views = require('./lib/views');
-const { createTurns } = require('./lib/turns');
+const { createTurns, estimate } = require('./lib/turns');
 
 const TIME_ZONE = 'Europe/London';
 const ADMIN_SESSION_HOURS = 12;
@@ -15,13 +15,13 @@ function createApp({
   adminPassword = process.env.ADMIN_PASSWORD,
   publicUrl = process.env.PUBLIC_URL,
   now = () => new Date(),
-  noShowMinutes = Number(process.env.NO_SHOW_MINUTES) || 10,
+  noShowMinutes = Number(process.env.NO_SHOW_MINUTES) || undefined, // first-run default; then set on the Settings page
   vapidSubject = process.env.VAPID_SUBJECT || 'mailto:laundry@example.com',
   sendPush, // injectable for tests; defaults to real Web Push
 } = {}) {
   if (!adminPassword) throw new Error('ADMIN_PASSWORD must be set');
 
-  const store = new Store(dataFile);
+  const store = new Store(dataFile, noShowMinutes ? { noShowMinutes } : {});
   const app = express();
 
   // --- notifications -----------------------------------------------------------
@@ -37,7 +37,7 @@ function createApp({
       });
     }
   };
-  const turns = createTurns({ store, notify, timeoutMs: noShowMinutes * 60000 });
+  const turns = createTurns({ store, notify });
   const nowMs = () => now().getTime();
   app.disable('x-powered-by');
   app.set('trust proxy', true);
@@ -64,6 +64,35 @@ function createApp({
     return { today, tomorrow: addDays(today, 1) };
   };
   const sweep = () => turns.sweep(days().today, nowMs());
+
+  // Opening hours, in UK time.
+  const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+  const hours = () => {
+    const { openFrom, openUntil } = store.settings;
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(now());
+    const nowMin = Number(parts.find((p) => p.type === 'hour').value) * 60 + Number(parts.find((p) => p.type === 'minute').value);
+    return {
+      openFrom, openUntil,
+      beforeOpen: nowMin < toMin(openFrom),
+      afterClose: nowMin >= toMin(openUntil),
+      closesInMs: (toMin(openUntil) - nowMin) * 60000,
+    };
+  };
+
+  // Everything the queue views need about today: estimates, machines, hours.
+  const todayInfo = (list) => {
+    const est = estimate(list, store.settings, nowMs());
+    return { ...est, hours: hours(), settings: store.settings, now: nowMs() };
+  };
+
+  // Is signing up for this day allowed right now? Returns a reason if not.
+  const dayClosed = (day, list) => {
+    const { dailyLimit } = store.settings;
+    if (day === 'today' && hours().afterClose) return `The laundry room is closed for today.`;
+    if (dailyLimit && list.length >= dailyLimit) return `${day === 'today' ? "Today's" : "Tomorrow's"} list is full.`;
+    return null;
+  };
   // Keep no-show timers running even when nobody has a page open.
   setInterval(sweep, 15000).unref();
 
@@ -87,12 +116,22 @@ function createApp({
 
   const joinContext = () => {
     const { today, tomorrow } = days();
+    const todayList = store.list(today);
+    const tomorrowList = store.list(tomorrow);
+    // How long a new sign-up for today would wait: add a pretend person at the back.
+    const est = estimate([...todayList, { id: '_new', status: 'waiting' }], store.settings, nowMs());
+    const h = hours();
     return {
-      token: store.qrToken, today, tomorrow,
-      todayWaiting: store.list(today).filter((e) => e.status === 'waiting').length,
-      tomorrowCount: store.list(tomorrow).filter((e) => e.status !== 'done').length,
+      token: store.qrToken, today, tomorrow, hours: h,
+      todayWaiting: todayList.filter((e) => e.status === 'waiting').length,
+      tomorrowCount: tomorrowList.filter((e) => e.status !== 'done').length,
+      todayWaitMs: est.startIn.get('_new'),
+      todayClosed: dayClosed('today', todayList),
+      tomorrowClosed: dayClosed('tomorrow', tomorrowList),
     };
   };
+
+  const qrSvg = (url, dark = '#0c2c65') => QRCode.toString(url, { type: 'svg', margin: 1, color: { dark } });
 
   const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 40);
 
@@ -113,7 +152,7 @@ function createApp({
       return [{ entry: active[i], ahead, when }];
     });
     res.send(views.homePage({
-      today, tomorrow, todayList, tomorrowList, mySpots, noShowMs: noShowMinutes * 60000,
+      today, tomorrow, todayList, tomorrowList, mySpots, info: todayInfo(todayList),
       deviceId: device,
       msg: msgs[req.query.m],
       highlight: req.query.id,
@@ -136,6 +175,8 @@ function createApp({
 
     if (!values.name || !values.house) return fail('Please fill in your name and house.');
     if (!date) return fail('Please choose today or tomorrow.');
+    const closed = dayClosed(values.day, store.list(date));
+    if (closed) return fail(closed + (values.day === 'today' ? ' You can still sign up for tomorrow.' : ''));
 
     const device = deviceId(req, res);
     const list = store.list(date).filter((e) => e.status !== 'done');
@@ -155,7 +196,7 @@ function createApp({
     const entry = store.get(req.params.id);
     if (entry && ['waiting', 'called'].includes(entry.status) && entry.deviceId === cookies(req).lq_device) {
       store.remove(entry.id);
-      if (entry.status === 'called') turns.callNext(entry.date, nowMs());
+      if (entry.status === 'called') turns.callNext(entry.date, nowMs(), { except: entry.id });
     }
     res.redirect('/?m=left');
   });
@@ -176,6 +217,22 @@ function createApp({
     if (!device || !valid) return res.status(400).json({ ok: false });
     store.addSubscription(device, { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } });
     res.json({ ok: true });
+  });
+
+  // --- laundry room screen (TV / tablet) --------------------------------------
+  // Shows the QR code, so it needs the secret display link from the staff page.
+  app.get('/display', async (req, res, next) => {
+    try {
+      if (!safeEqual(req.query.k || '', store.displayKey)) return res.status(403).send(views.scanRequiredPage());
+      sweep();
+      const { today, tomorrow } = days();
+      const list = store.list(today);
+      res.send(views.displayPage({
+        today, list, info: todayInfo(list),
+        tomorrowCount: store.list(tomorrow).length,
+        qrSvg: await qrSvg(joinUrl(req), '#0c2c65'),
+      }));
+    } catch (err) { next(err); }
   });
 
   // --- admin ----------------------------------------------------------------
@@ -202,15 +259,21 @@ function createApp({
       const day = req.query.day === 'tomorrow' ? 'tomorrow' : 'today';
       const date = day === 'tomorrow' ? tomorrow : today;
       const url = joinUrl(req);
-      const msgs = { rotated: 'New QR code generated — print a new poster.', cleared: 'List cleared.' };
+      const msgs = {
+        rotated: 'New QR code generated — print a new poster. The laundry room screen link has changed too.',
+        cleared: 'List cleared.',
+        saved: 'Settings saved.',
+      };
       const active = (d) => store.list(d).filter((e) => e.status !== 'done').length;
+      const list = store.list(date);
       res.send(views.adminPage({
-        day, date, today, tomorrow,
-        list: store.list(date),
+        day, date, today, tomorrow, list,
+        info: todayInfo(store.list(today)),
+        freeMachines: turns.freeMachines(today),
         counts: { today: active(today), tomorrow: active(tomorrow) },
-        qrSvg: await QRCode.toString(url, { type: 'svg', margin: 1, color: { dark: '#0c2c65' } }),
+        qrSvg: await qrSvg(url),
         joinUrl: url,
-        noShowMs: noShowMinutes * 60000,
+        displayUrl: `/display?k=${store.displayKey}`,
         msg: msgs[req.query.m],
       }));
     } catch (err) { next(err); }
@@ -218,9 +281,33 @@ function createApp({
 
   app.get('/admin/poster', requireAdmin, async (req, res, next) => {
     try {
-      const qrSvg = await QRCode.toString(joinUrl(req), { type: 'svg', margin: 1, color: { dark: '#0c2c65' } });
-      res.send(views.posterPage({ qrSvg }));
+      res.send(views.posterPage({ qrSvg: await qrSvg(joinUrl(req)) }));
     } catch (err) { next(err); }
+  });
+
+  // Settings page.
+  app.get('/admin/settings', requireAdmin, (req, res) => res.send(views.settingsPage({ settings: store.settings })));
+
+  app.post('/admin/settings', requireAdmin, (req, res) => {
+    const b = req.body;
+    const int = (v, min, max) => { const n = Number(v); return Number.isInteger(n) && n >= min && n <= max ? n : null; };
+    const time = (v) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(v || '') ? v : null);
+    const next = {
+      machines: int(b.machines, 1, 10),
+      washMinutes: int(b.washMinutes, 10, 180),
+      noShowMinutes: int(b.noShowMinutes, 2, 60),
+      openFrom: time(b.openFrom),
+      openUntil: time(b.openUntil),
+      dailyLimit: int(b.dailyLimit || 0, 0, 200),
+    };
+    const bad = Object.entries(next).filter(([, v]) => v === null).map(([k]) => k);
+    if (!bad.length && toMin(next.openFrom) >= toMin(next.openUntil)) bad.push('openUntil');
+    if (bad.length) {
+      return res.status(400).send(views.settingsPage({ settings: { ...store.settings, ...b }, error: 'Please check the highlighted fields.', bad }));
+    }
+    store.updateSettings(next);
+    turns.callNext(days().today, nowMs()); // more machines may mean more people can be called
+    res.redirect('/admin?m=saved');
   });
 
   const back = (req, res, m) =>
@@ -230,8 +317,8 @@ function createApp({
     fn(req.params.id);
     back(req, res);
   };
-  app.post('/admin/start/:id', requireAdmin, action((id) => turns.start(id)));
-  app.post('/admin/done/:id', requireAdmin, action((id) => turns.finish(id)));
+  app.post('/admin/start/:id', requireAdmin, action((id) => turns.start(id, nowMs())));
+  app.post('/admin/done/:id', requireAdmin, action((id) => turns.finish(id, nowMs())));
   app.post('/admin/skip/:id', requireAdmin, action((id) => turns.skip(id, nowMs())));
   app.post('/admin/reset/:id', requireAdmin, action((id) => store.setStatus(id, 'waiting')));
 
@@ -240,9 +327,9 @@ function createApp({
     back(req, res);
   });
 
-  // One tap: finish whatever is washing and call the next person.
+  // Call the next person for each free machine.
   app.post('/admin/next/:date', requireAdmin, (req, res) => {
-    turns.finishAndCallNext(req.params.date, nowMs());
+    turns.callNext(req.params.date, nowMs());
     back(req, res);
   });
 
