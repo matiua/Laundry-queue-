@@ -1,0 +1,29 @@
+{
+  "name": "laundry-queue",
+  "version": "1.0.0",
+  "description": "Boarding laundry queue for Scarborough College — sign up by QR code, admin can manage the list",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matiua/Laundry-queue-.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/matiua/Laundry-queue-/issues"
+  },
+  "homepage": "https://github.com/matiua/Laundry-queue-#readme",
+  "dependencies": {
+    "express": "^4.22.3",
+    "qrcode": "^1.5.4",
+    "web-push": "^3.6.7"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
+}
